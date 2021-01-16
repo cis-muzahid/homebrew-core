@@ -4,7 +4,7 @@ class Sip < Formula
   url "https://www.riverbankcomputing.com/static/Downloads/sip/4.19.24/sip-4.19.24.tar.gz"
   sha256 "edcd3790bb01938191eef0f6117de0bf56d1136626c0ddb678f3a558d62e41e5"
   license any_of: ["GPL-2.0-only", "GPL-3.0-only"]
-  revision 1
+  revision 12
   head "https://www.riverbankcomputing.com/hg/sip", using: :hg
 
   livecheck do
@@ -21,10 +21,10 @@ class Sip < Formula
     sha256 "c555ded74a09732751261cfe7cd243ceb69bed86f489df8a80cc4e6a5819220c" => :high_sierra
   end
 
-  depends_on "python@3.9"
+  depends_on "python@2"
 
   def install
-    ENV.prepend_path "PATH", Formula["python@3.9"].opt_bin
+    ENV.prepend_path "PATH", Formula["python@2"].opt_bin
     ENV.delete("SDKROOT") # Avoid picking up /Application/Xcode.app paths
 
     if build.head?
@@ -35,17 +35,29 @@ class Sip < Formula
       system "python", "build.py", "prepare"
     end
 
-    version = Language::Python.major_minor_version "python3"
-    system "python3", "configure.py",
-                      "--deployment-target=#{MacOS.version}",
-                      "--destdir=#{lib}/python#{version}/site-packages",
-                      "--bindir=#{bin}",
-                      "--incdir=#{include}",
-                      "--sipdir=#{HOMEBREW_PREFIX}/share/sip",
-                      "--sip-module", "PyQt5.sip"
-    system "make"
-    system "make", "install"
-  end
+  #   version = Language::Python.major_minor_version "python3"
+  #   system "python3", "configure.py",
+  #                     "--deployment-target=#{MacOS.version}",
+  #                     "--destdir=#{lib}/python#{version}/site-packages",
+  #                     "--bindir=#{bin}",
+  #                     "--incdir=#{include}",
+  #                     "--sipdir=#{HOMEBREW_PREFIX}/share/sip",
+  #                     "--sip-module", "PyQt5.sip"
+  #   system "make"
+  #   system "make", "install"
+  # end
+    ["python2", "python3"].each do |python|
+      version = Language::Python.major_minor_version python
+      system python, "configure.py",
+                     "--deployment-target=#{MacOS.version}",
+                     "--destdir=#{lib}/python#{version}/site-packages",
+                     "--bindir=#{bin}",
+                     "--incdir=#{include}",
+                     "--sipdir=#{HOMEBREW_PREFIX}/share/sip"
+      system "make"
+      system "make", "install"
+      system "make", "clean"
+    end
 
   def post_install
     (HOMEBREW_PREFIX/"share/sip").mkpath
@@ -84,5 +96,15 @@ class Sip < Formula
     system ENV.cxx, "-shared", "-Wl,-install_name,#{testpath}/libtest.dylib",
                     "-o", "libtest.dylib", "test.cpp"
     system bin/"sip", "-b", "test.build", "-c", ".", "test.sip"
+
+    ["python2", "python3"].each do |python|
+      version = Language::Python.major_minor_version python
+      ENV["PYTHONPATH"] = lib/"python#{version}/site-packages"
+      system python, "generate.py"
+      system "make", "-j1", "clean", "all"
+      system python, "run.py"
+    end
+
+
   end
 end
