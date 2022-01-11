@@ -1,30 +1,24 @@
 class Sip < Formula
   desc "Tool to create Python bindings for C and C++ libraries"
   homepage "https://www.riverbankcomputing.com/software/sip/intro"
-  url "https://www.riverbankcomputing.com/static/Downloads/sip/4.19.24/sip-4.19.24.tar.gz"
-  sha256 "edcd3790bb01938191eef0f6117de0bf56d1136626c0ddb678f3a558d62e41e5"
-  license any_of: ["GPL-2.0-only", "GPL-3.0-only"]
-  revision 1
-  head "https://www.riverbankcomputing.com/hg/sip", using: :hg
-
-  livecheck do
-    url "https://riverbankcomputing.com/software/sip/download"
-    regex(/href=.*?sip[._-]v?(\d+(\.\d+)+)\.t/i)
-  end
+  url "https://dl.bintray.com/homebrew/mirror/sip-4.19.8.tar.gz"
+  mirror "https://downloads.sourceforge.net/project/pyqt/sip/sip-4.19.8/sip-4.19.8.tar.gz"
+  sha256 "7eaf7a2ea7d4d38a56dd6d2506574464bddf7cf284c960801679942377c297bc"
+  revision 12
+  head "https://www.riverbankcomputing.com/hg/sip", :using => :hg
 
   bottle do
     cellar :any_skip_relocation
-    sha256 "8325e469dc8c267c526034ce3ea3bc014c3f66dc05471e0af81bef9725cdb671" => :big_sur
-    sha256 "000960d8619e5dba18a9e5585e6eac8b9123977c448ea08024bf8fcab777d000" => :arm64_big_sur
-    sha256 "20c9e0745b80d218317e81bb81227b513c59d84524ad6cf44439d446cb289616" => :catalina
-    sha256 "5a64babc3b0e9058fce2b9963ef8193d6b8437de1d8119e43966b4ad42092590" => :mojave
-    sha256 "c555ded74a09732751261cfe7cd243ceb69bed86f489df8a80cc4e6a5819220c" => :high_sierra
+    sha256 "6e71708515bb6b3b7956ac076058dbf4d2eeae470dace9563dbe9f313479a9b7" => :mojave
+    sha256 "c3b58c31be4c2014bb082731f25148ec65dce923d2499f72dc8eddcc95afa661" => :high_sierra
+    sha256 "d223031f11bfedd3247236109ce5bc0b7ff9a7e0672d44b4a4d1a129393d505c" => :sierra
   end
 
-  depends_on "python@3.9"
+  depends_on "python"
+  depends_on "python@2"
 
   def install
-    ENV.prepend_path "PATH", Formula["python@3.9"].opt_bin
+    ENV.prepend_path "PATH", Formula["python"].opt_libexec/"bin"
     ENV.delete("SDKROOT") # Avoid picking up /Application/Xcode.app paths
 
     if build.head?
@@ -35,20 +29,27 @@ class Sip < Formula
       system "python", "build.py", "prepare"
     end
 
-    version = Language::Python.major_minor_version "python3"
-    system "python3", "configure.py",
-                      "--deployment-target=#{MacOS.version}",
-                      "--destdir=#{lib}/python#{version}/site-packages",
-                      "--bindir=#{bin}",
-                      "--incdir=#{include}",
-                      "--sipdir=#{HOMEBREW_PREFIX}/share/sip",
-                      "--sip-module", "PyQt5.sip"
-    system "make"
-    system "make", "install"
+    ["python2", "python3"].each do |python|
+      version = Language::Python.major_minor_version python
+      system python, "configure.py",
+                     "--deployment-target=#{MacOS.version}",
+                     "--destdir=#{lib}/python#{version}/site-packages",
+                     "--bindir=#{bin}",
+                     "--incdir=#{include}",
+                     "--sipdir=#{HOMEBREW_PREFIX}/share/sip"
+      system "make"
+      system "make", "install"
+      system "make", "clean"
+    end
   end
 
   def post_install
     (HOMEBREW_PREFIX/"share/sip").mkpath
+  end
+
+  def caveats; <<~EOS
+    The sip-dir for Python is #{HOMEBREW_PREFIX}/share/sip.
+  EOS
   end
 
   test do
@@ -80,9 +81,28 @@ class Sip < Formula
         void test();
       };
     EOS
-
+    (testpath/"generate.py").write <<~EOS
+      from sipconfig import SIPModuleMakefile, Configuration
+      m = SIPModuleMakefile(Configuration(), "test.build")
+      m.extra_libs = ["test"]
+      m.extra_lib_dirs = ["."]
+      m.generate()
+    EOS
+    (testpath/"run.py").write <<~EOS
+      from test import Test
+      t = Test()
+      t.test()
+    EOS
     system ENV.cxx, "-shared", "-Wl,-install_name,#{testpath}/libtest.dylib",
                     "-o", "libtest.dylib", "test.cpp"
     system bin/"sip", "-b", "test.build", "-c", ".", "test.sip"
+
+    ["python2", "python3"].each do |python|
+      version = Language::Python.major_minor_version python
+      ENV["PYTHONPATH"] = lib/"python#{version}/site-packages"
+      system python, "generate.py"
+      system "make", "-j1", "clean", "all"
+      system python, "run.py"
+    end
   end
 end
